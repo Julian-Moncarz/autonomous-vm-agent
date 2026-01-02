@@ -326,7 +326,7 @@ def main():
     parser.add_argument("--task", help="Task to execute (non-interactive mode)")
     parser.add_argument("--save-log", metavar="FILE", help="Save session log to JSON file (keeps screenshots)")
     parser.add_argument("--record-video", metavar="FILE", help="Record session to video file (saves log + compiles video)")
-    parser.add_argument("--fps", type=float, default=1.0, help="Video frames per second (default: 1.0)")
+    parser.add_argument("--fps", type=float, default=0.5, help="Video frames per second (default: 0.5)")
     args = parser.parse_args()
 
     # Get VM IP if not provided

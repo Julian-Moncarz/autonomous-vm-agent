@@ -57,40 +57,54 @@ class VM:
 
     def screenshot(self) -> bytes:
         """Take screenshot with cursor visible, return PNG bytes."""
-        # Use unique filename, force overwrite, sync display first
         import time
         ts = int(time.time() * 1000)
+        disp = self._get_display()
         cmd = f"""
             rm -f /tmp/shot_{ts}.png
-            DISPLAY=:0 xdotool sync
+            DISPLAY={disp} xdotool sync
             sleep 0.1
-            DISPLAY=:0 scrot -o /tmp/shot_{ts}.png
+            DISPLAY={disp} scrot -o /tmp/shot_{ts}.png
             base64 /tmp/shot_{ts}.png
             rm -f /tmp/shot_{ts}.png
         """
         b64 = self._run(cmd, timeout=15)
         return base64.b64decode(b64.strip())
 
+    def _get_display(self) -> str:
+        """Detect which display X is running on."""
+        # Try common displays
+        for disp in [":0", ":1"]:
+            try:
+                self._run(f"DISPLAY={disp} xdotool getdisplaygeometry", timeout=2)
+                return disp
+            except VMError:
+                continue
+        return ":0"  # Default fallback
+
     def move_mouse(self, x: int, y: int):
         """Move mouse to absolute coordinates."""
-        self._run(f"DISPLAY=:0 xdotool mousemove {x} {y}")
+        disp = self._get_display()
+        self._run(f"DISPLAY={disp} xdotool mousemove {x} {y}")
 
     def click(self, button: str = "left", clicks: int = 1):
         """Click mouse button."""
+        disp = self._get_display()
         btn = {"left": "1", "right": "3", "middle": "2"}.get(button, "1")
         for _ in range(clicks):
-            self._run(f"DISPLAY=:0 xdotool click {btn}")
+            self._run(f"DISPLAY={disp} xdotool click {btn}")
 
     def type_text(self, text: str):
         """Type text. For special keys, use press_key instead."""
-        # Use xdotool type with proper escaping
+        disp = self._get_display()
         escaped = shlex.quote(text)
-        self._run(f"DISPLAY=:0 xdotool type --clearmodifiers {escaped}")
+        self._run(f"DISPLAY={disp} xdotool type --clearmodifiers {escaped}")
 
     def press_key(self, key: str):
         """Press key or combo. Examples: Return, Tab, ctrl+a, alt+F4"""
+        disp = self._get_display()
         escaped = shlex.quote(key)
-        self._run(f"DISPLAY=:0 xdotool key {escaped}")
+        self._run(f"DISPLAY={disp} xdotool key {escaped}")
 
     @staticmethod
     def get_ip(vm_name: str) -> str:

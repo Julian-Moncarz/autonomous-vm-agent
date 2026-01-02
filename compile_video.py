@@ -21,15 +21,12 @@ def add_overlay(screenshot_path: str, actions: list[str], reasoning: Optional[st
     img = Image.open(screenshot_path).convert("RGB")
     width, height = img.size
 
-    # Calculate overlay height
-    overlay_height = 20  # Base padding
-    if actions:
-        overlay_height += 25
-    if reasoning:
-        chars_per_line = max(1, (width - 30) // 8)
-        lines = min(4, (len(reasoning) // chars_per_line) + 1)
-        overlay_height += lines * 20 + 10
-    overlay_height = max(60, overlay_height)
+    # Overlay is 1/4 of image height
+    overlay_height = height // 4
+    # Ensure total height is even for h264 compatibility
+    total_height = height + overlay_height
+    if total_height % 2 == 1:
+        overlay_height += 1
 
     # Create new image with overlay space
     new_img = Image.new("RGB", (width, height + overlay_height), color=(30, 30, 30))
@@ -37,7 +34,7 @@ def add_overlay(screenshot_path: str, actions: list[str], reasoning: Optional[st
 
     draw = ImageDraw.Draw(new_img)
 
-    # Try to get a nice font
+    # Try to get a nice font - bigger sizes
     font_large = font_small = None
     for font_path in [
         "/System/Library/Fonts/SFNSMono.ttf",
@@ -45,8 +42,8 @@ def add_overlay(screenshot_path: str, actions: list[str], reasoning: Optional[st
         "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
     ]:
         try:
-            font_large = ImageFont.truetype(font_path, 16)
-            font_small = ImageFont.truetype(font_path, 14)
+            font_large = ImageFont.truetype(font_path, 22)
+            font_small = ImageFont.truetype(font_path, 18)
             break
         except (OSError, IOError):
             continue
@@ -54,23 +51,25 @@ def add_overlay(screenshot_path: str, actions: list[str], reasoning: Optional[st
     if not font_large:
         font_large = font_small = ImageFont.load_default()
 
-    y_pos = height + 10
-    padding = 15
+    y_pos = height + 15
+    padding = 20
+    line_height_large = 30
+    line_height_small = 26
 
     # Draw actions
     if actions:
         action_text = "▶ " + " → ".join(actions)
         # Truncate if too long
-        max_chars = (width - 2 * padding) // 8
+        max_chars = (width - 2 * padding) // 11
         if len(action_text) > max_chars:
             action_text = action_text[:max_chars - 3] + "..."
         draw.text((padding, y_pos), action_text, fill=(100, 255, 100), font=font_large)
-        y_pos += 25
+        y_pos += line_height_large + 5
 
     # Draw reasoning (word-wrapped)
     if reasoning:
         reasoning = " ".join(reasoning.split())  # Normalize whitespace
-        chars_per_line = max(1, (width - 2 * padding) // 8)
+        chars_per_line = max(1, (width - 2 * padding) // 11)
         words = reasoning.split()
         lines = []
         current_line = []
@@ -88,16 +87,20 @@ def add_overlay(screenshot_path: str, actions: list[str], reasoning: Optional[st
         if current_line:
             lines.append(" ".join(current_line))
 
-        for line in lines[:4]:
+        # Calculate max lines that fit
+        remaining_height = (height + overlay_height) - y_pos - 10
+        max_lines = max(1, remaining_height // line_height_small)
+
+        for line in lines[:max_lines]:
             draw.text((padding, y_pos), line, fill=(200, 200, 200), font=font_small)
-            y_pos += 20
-        if len(lines) > 4:
-            draw.text((padding, y_pos), "...", fill=(150, 150, 150), font=font_small)
+            y_pos += line_height_small
+        if len(lines) > max_lines:
+            draw.text((padding, y_pos - line_height_small), "...", fill=(150, 150, 150), font=font_small)
 
     return new_img
 
 
-def compile_video(log_path: str, output_path: str, fps: float = 1.0) -> bool:
+def compile_video(log_path: str, output_path: str, fps: float = 0.5) -> bool:
     """Compile session log into video.
 
     Args:
@@ -166,7 +169,7 @@ def main():
     parser = argparse.ArgumentParser(description="Compile session log to video")
     parser.add_argument("log", help="Session log JSON file")
     parser.add_argument("-o", "--output", required=True, help="Output video file (e.g., session.mp4)")
-    parser.add_argument("--fps", type=float, default=1.0, help="Frames per second (default: 1.0)")
+    parser.add_argument("--fps", type=float, default=0.5, help="Frames per second (default: 0.5)")
     args = parser.parse_args()
 
     success = compile_video(args.log, args.output, args.fps)

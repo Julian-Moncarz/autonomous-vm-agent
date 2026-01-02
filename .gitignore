@@ -23,4 +23,7 @@ Thumbs.db
 *.iso
 screenshots/
 .env
-screenshots/
+
+# Session recordings
+session.json
+*.mp4
