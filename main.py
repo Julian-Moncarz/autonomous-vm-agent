@@ -130,8 +130,44 @@ def execute_tool(vm: VM, name: str, args: dict) -> dict:
         return {"success": False, "error": f"Unexpected error: {e}"}
 
 
-def run_agent(vm: VM, task: str):
-    """Run the agent loop until task complete or max iterations."""
+def generate_handoff(client: Anthropic, messages: list, task: str) -> str:
+    """Generate a handoff summary for the next agent instance."""
+    handoff_request = [{
+        "role": "user",
+        "content": """You've reached the turn limit. Generate a concise HANDOFF SUMMARY for the next agent instance that will continue this task.
+
+Include:
+1. ORIGINAL TASK: What the user asked for
+2. PROGRESS: What has been accomplished so far
+3. CURRENT STATE: Where things stand (what's on screen, what app is open, etc.)
+4. NEXT STEPS: What should be done next to continue/complete the task
+5. BLOCKERS: Any issues or obstacles encountered
+
+Be specific and actionable. The next agent will receive this summary plus a fresh screenshot."""
+    }]
+
+    # Use the existing conversation context
+    handoff_messages = messages + handoff_request
+
+    response = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=1024,
+        messages=handoff_messages
+    )
+
+    # Extract text from response
+    for block in response.content:
+        if hasattr(block, "text") and block.text:
+            return block.text
+    return "No handoff summary generated."
+
+
+def run_agent(vm: VM, task: str, handoff_context: str = None):
+    """Run the agent loop until task complete or max iterations.
+
+    Returns:
+        str or None: Handoff context if stopped due to iteration limit, None if task completed.
+    """
     client = Anthropic()
 
     # Take initial screenshot
@@ -140,7 +176,31 @@ def run_agent(vm: VM, task: str):
         initial_screenshot = vm.screenshot()
     except VMError as e:
         print(f"Error: Could not take screenshot: {e}")
-        return
+        return None
+
+    # Build the initial prompt
+    base_prompt = f"""You are an autonomous agent controlling a Debian Linux desktop.
+
+YOUR TASK: {task}
+
+GUIDELINES:
+- Take screenshots frequently to verify your actions worked
+- Move mouse to target BEFORE clicking
+- Use wait after clicks that trigger page loads
+- If you encounter CAPTCHAs, login prompts, or are stuck, use ask_user
+- Be methodical: screenshot -> think -> act -> screenshot to verify"""
+
+    if handoff_context:
+        initial_text = f"""{base_prompt}
+
+HANDOFF FROM PREVIOUS AGENT SESSION:
+{handoff_context}
+
+The screenshot above shows the current desktop. Continue working on the task from where the previous agent left off."""
+    else:
+        initial_text = f"""{base_prompt}
+
+The screenshot above shows the current desktop. Begin working on the task."""
 
     messages = [{
         "role": "user",
@@ -155,18 +215,7 @@ def run_agent(vm: VM, task: str):
             },
             {
                 "type": "text",
-                "text": f"""You are an autonomous agent controlling a Debian Linux desktop.
-
-YOUR TASK: {task}
-
-GUIDELINES:
-- Take screenshots frequently to verify your actions worked
-- Move mouse to target BEFORE clicking
-- Use wait after clicks that trigger page loads
-- If you encounter CAPTCHAs, login prompts, or are stuck, use ask_user
-- Be methodical: screenshot -> think -> act -> screenshot to verify
-
-The screenshot above shows the current desktop. Begin working on the task."""
+                "text": initial_text
             }
         ]
     }]
@@ -186,12 +235,12 @@ The screenshot above shows the current desktop. Begin working on the task."""
 
         # Check if Claude is done
         if response.stop_reason == "end_turn":
-            return
+            return None  # Task completed, no handoff needed
 
         # Process tool calls
         tool_uses = [b for b in response.content if b.type == "tool_use"]
         if not tool_uses:
-            return
+            return None  # No more actions, task likely complete
 
         # Add assistant message
         messages.append({"role": "assistant", "content": response.content})
@@ -232,7 +281,11 @@ The screenshot above shows the current desktop. Begin working on the task."""
 
         messages.append({"role": "user", "content": tool_results})
 
-    print(f"\nStopped after {MAX_ITERATIONS} iterations.")
+    # Hit iteration limit - generate handoff for next agent
+    print(f"\nReached {MAX_ITERATIONS} iteration limit. Generating handoff summary...")
+    handoff = generate_handoff(client, messages, task)
+    print(f"\n--- HANDOFF SUMMARY ---\n{handoff}\n-----------------------")
+    return handoff
 
 
 def main():
@@ -274,7 +327,11 @@ def main():
         if args.task:
             # Non-interactive mode: run single task and exit
             print(f"Task: {args.task}\n")
-            run_agent(vm, args.task)
+            handoff = run_agent(vm, args.task)
+            # Continue with handoff if iteration limit was reached
+            while handoff:
+                print("\nContinuing with new agent instance...\n")
+                handoff = run_agent(vm, args.task, handoff_context=handoff)
         else:
             # Interactive mode
             print("Enter a task (Ctrl+C to quit)\n")
@@ -283,7 +340,11 @@ def main():
                 if not task:
                     continue
                 print()
-                run_agent(vm, task)
+                handoff = run_agent(vm, task)
+                # Continue with handoff if iteration limit was reached
+                while handoff:
+                    print("\nContinuing with new agent instance...\n")
+                    handoff = run_agent(vm, task, handoff_context=handoff)
     except KeyboardInterrupt:
         print("\nGoodbye!")
     finally:
