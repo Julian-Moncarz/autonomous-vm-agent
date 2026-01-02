@@ -1,6 +1,7 @@
 # Autonomous VM Agent
 
 Claude controls a Debian VM to complete tasks autonomously.
+
 https://github.com/user-attachments/assets/2e2e228c-9ee2-444e-bfa3-b04c2c299110
 
 ## Overview
