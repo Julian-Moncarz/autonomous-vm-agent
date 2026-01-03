@@ -35,6 +35,22 @@ flowchart TD
 
 ```
 
+```mermaid
+flowchart TB
+    subgraph Mac["Mac Host"]
+        main["main.py"] --> claude["Claude API"] --> tools["Tool Calls"]
+        main --> vm["vm.py"]
+    end
+
+    subgraph VM["Debian VM (UTM)"]
+        xdotool["xdotool - mouse/keyboard control"]
+        scrot["scrot - screenshots"]
+        xfce["XFCE - desktop environment"]
+    end
+
+    vm -->|SSH| VM
+```
+
 ## License
 
 MIT
