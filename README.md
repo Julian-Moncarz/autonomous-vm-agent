@@ -17,6 +17,8 @@ See **[SETUP.md](SETUP.md)** for detailed first-time setup instructions.
 
 To use once set up: just run python main.py
 
+Note: you don't need to use UTM - any linux machine you can SSH into should be fine (this means the harness could be easily extended to make something like https://theaidigest.org/village)
+
 ## How it works
 
 ```mermaid
